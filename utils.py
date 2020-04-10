@@ -18,7 +18,6 @@ from torch.autograd import Variable
 import torch.utils.data as data
 import torch.optim as optim
 from torch.optim import lr_scheduler
-import tqdm
 import time
 import os
 import copy
@@ -108,7 +107,7 @@ def gamma_correction(img, factor):
 
 #Function to scale the signal
 def scale_operation(w, scale):
-    dim = len(torch.flatten(w))
+    dim = len(torch.flatten(w))//3
     n_dim = int(dim/scale)
     w = w.unsqueeze(0)
     t = nn.Upsample(size=(dim,1), mode='bilinear')
