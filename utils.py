@@ -93,13 +93,15 @@ def stack(w,size):
     return nsum.view([3,size,1])
 
 #Function to shift signal by arbitrary offset
-def shift_operation(w,offset):
-    dim = len(torch.flatten(w))//3
+def shift_operation(w,offsets):
+    dim = w.shape[1]
     ide = torch.eye(dim, device=device)
-    for i in range(dim):
-        ide[i][i] = 0
-        ide[(i+offset)%dim][i] = 1
-    return torch.matmul(ide,w)
+    ides = torch.zeros(w.shape[0], dim, dim, device=device)
+    for i, offset in enumerate(offsets):
+        ides[3*i] = torch.cat([ide[-offset:], ide[:-offset]])
+        ides[3*i+1] = torch.cat([ide[-offset:], ide[:-offset]])
+        ides[3*i+2] = torch.cat([ide[-offset:], ide[:-offset]])
+    return torch.bmm(ides,w)
 
 #Function to deal with gamma correction?
 def gamma_correction(img, factor):
