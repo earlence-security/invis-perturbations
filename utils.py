@@ -59,12 +59,12 @@ def stack(w,size):
         return w
     
     #Stacked identity functions are used to replicate the signal
-    ide = torch.eye(dim, requires_grad=True, dtype=torch.float, device=device)
-    zer = torch.zeros([1,dim], requires_grad=True, dtype=torch.float, device=device)
+    ide = torch.eye(dim, requires_grad=False, dtype=torch.float, device=device)
+    zer = torch.zeros([1,dim], requires_grad=False, dtype=torch.float, device=device)
 
     n = size // dim   #number of full repititions
     m = size % dim    #number of extra rows
-    nsum = torch.zeros([1,size,3], requires_grad=True, dtype=torch.float, device=device)
+    nsum = torch.zeros([1,size,3], requires_grad=False, dtype=torch.float, device=device)
     ides = torch.cat(n*[ide])   #stacked identities
     
     #if extra rows, add rows of zeros to the end of the stacked identities
@@ -85,7 +85,7 @@ def stack(w,size):
     #Create partial identity matrix for m rows
     t = []
     for i in range(m):
-        t.append(torch.tensor([1 if x == i else 0 for x in range(dim)],requires_grad=True, dtype=torch.float, device=device))
+        t.append(torch.tensor([1 if x == i else 0 for x in range(dim)],requires_grad=False, dtype=torch.float, device=device))
     
     #add partial identity to end of zero matrix and combine with prior identity matrix
     mat2 = torch.cat([torch.cat(dim*n*[zer]),torch.stack(t)])
@@ -124,3 +124,37 @@ def split(inp,chan):
         if i != chan:
             inp2[i] = torch.zeros(size)
     return inp2
+
+
+
+#The shutter function is encoded into the convolution layer
+lay = torch.nn.Conv1d(1,1,5)
+
+#Manually setting the weights and bias so the  shutter acts as a box filter
+lay.weight.data = torch.full([1,1,5,1], .2, requires_grad=True, dtype=torch.float, device=device)
+lay.bias.data = torch.zeros(1, requires_grad=True, dtype=torch.float, device=device)
+
+#Compute g(y) to get X_adv
+def fttogy(w, batch, mask):
+    sz = w.shape[1]
+    
+    #stack the signal to fit the input size
+    oot = stack(w,228)             
+    
+    # EOT sampling for ambient light and shift
+    c = torch.rand([batch,1,1,1], device=device) * .5 + .2
+    shift = torch.randint(0, sz, (batch,))
+    
+    #Shift the signal
+    ootn = shift_operation(oot.unsqueeze(0).repeat(batch,1,1,1).view(-1, 228, 1), shift).view(batch,3,228,1)
+    
+    #Fit w into the range [0,1]. new_w is the same as ft
+    new_w = .5 * (torch.tanh(ootn) + 1)
+    
+    #Convolution of ft and the shutter
+    gy = lay(new_w.unsqueeze(0).view([3,1,228,batch])).view([batch,3,224,1])
+    
+    #Mask the signal to only affect the object
+    gy_mask = gy * mask
+    
+    return (c + (1-c)*gy_mask)
