@@ -135,15 +135,16 @@ lay.weight.data = torch.full([1,1,5,1], .2, requires_grad=True, dtype=torch.floa
 lay.bias.data = torch.zeros(1, requires_grad=True, dtype=torch.float, device=device)
 
 #Compute g(y) to get X_adv
-def fttogy(w, batch, mask):
+def fttogy(w, batch, mask, c_limits):
     sz = w.shape[1]
     
     #stack the signal to fit the input size
     oot = stack(w,228)             
     
     # EOT sampling for ambient light and shift
-    c = torch.rand([batch,1,1,1], device=device) * .5 + .2
+    c = torch.rand([batch,1,1,1], device=device) * (c_limits[1] - c_limits[0]) + c_limits[0]
     shift = torch.randint(0, sz, (batch,))
+    #shift = torch.from_numpy(np.array(range(0,batch,1)))
     
     #Shift the signal
     ootn = shift_operation(oot.unsqueeze(0).repeat(batch,1,1,1).view(-1, 228, 1), shift).view(batch,3,228,1)
@@ -152,9 +153,10 @@ def fttogy(w, batch, mask):
     new_w = .5 * (torch.tanh(ootn) + 1)
     
     #Convolution of ft and the shutter
-    gy = lay(new_w.unsqueeze(0).view([3,1,228,batch])).view([batch,3,224,1])
+    #gy = lay(new_w.unsqueeze(0).view([3,1,228,batch])).view([batch,3,224,1])
+    gy = lay(new_w.transpose(0,3).transpose(0,1)).transpose(0,1).transpose(0,3)
     
     #Mask the signal to only affect the object
     gy_mask = gy * mask
     
-    return (c + (1-c)*gy_mask)
+    return (c + (1-c)*gy_mask), new_w
