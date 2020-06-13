@@ -75,12 +75,12 @@ def stack(w,size):
         mat = ides
         
     #Rearange input to allow for matrix multiplication
-    w2 = w.view([1,dim,3])
+    w2 = w.transpose(0,2)
     
     #Multiply by stacked identities
     nsum = nsum + torch.matmul(mat,w2)
     if m == 0:
-        return nsum.view([3,size,1])
+        return nsum.transpose(0,2)
     
     #Create partial identity matrix for m rows
     t = []
@@ -90,7 +90,7 @@ def stack(w,size):
     #add partial identity to end of zero matrix and combine with prior identity matrix
     mat2 = torch.cat([torch.cat(dim*n*[zer]),torch.stack(t)])
     nsum = nsum + torch.matmul(mat2,w2)
-    return nsum.view([3,size,1])
+    return nsum.transpose(0,2)
 
 #Function to shift signal by arbitrary offset
 def shift_operation(w,offsets):
@@ -128,18 +128,19 @@ def split(inp,chan):
 
 
 #The shutter function is encoded into the convolution layer
-lay = torch.nn.Conv1d(1,1,5)
+conv_size = 40
+lay = torch.nn.Conv1d(1,1,conv_size)
 
 #Manually setting the weights and bias so the  shutter acts as a box filter
-lay.weight.data = torch.full([1,1,5,1], .2, requires_grad=True, dtype=torch.float, device=device)
+lay.weight.data = torch.full([1,1,conv_size,1], 1/conv_size, requires_grad=True, dtype=torch.float, device=device)
 lay.bias.data = torch.zeros(1, requires_grad=True, dtype=torch.float, device=device)
 
 #Compute g(y) to get X_adv
-def fttogy(w, batch, mask, c_limits):
+def fttogy(w, batch, mask, c_limits, sig_height):
     sz = w.shape[1]
     
     #stack the signal to fit the input size
-    oot = stack(w,228)             
+    oot = stack(w,sig_height)             
     
     # EOT sampling for ambient light and shift
     c = torch.rand([batch,1,1,1], device=device) * (c_limits[1] - c_limits[0]) + c_limits[0]
@@ -147,7 +148,7 @@ def fttogy(w, batch, mask, c_limits):
     #shift = torch.from_numpy(np.array(range(0,batch,1)))
     
     #Shift the signal
-    ootn = shift_operation(oot.unsqueeze(0).repeat(batch,1,1,1).view(-1, 228, 1), shift).view(batch,3,228,1)
+    ootn = shift_operation(oot.unsqueeze(0).repeat(batch,1,1,1).view(-1, sig_height, 1), shift).view(batch,3,sig_height,1)
     
     #Fit w into the range [0,1]. new_w is the same as ft
     new_w = .5 * (torch.tanh(ootn) + 1)
@@ -155,8 +156,8 @@ def fttogy(w, batch, mask, c_limits):
     #Convolution of ft and the shutter
     #gy = lay(new_w.unsqueeze(0).view([3,1,228,batch])).view([batch,3,224,1])
     gy = lay(new_w.transpose(0,3).transpose(0,1)).transpose(0,1).transpose(0,3)
-    
+
     #Mask the signal to only affect the object
-    gy_mask = gy * mask
-    
+    gy_mask = torch.mul(gy,torch.transpose(mask,1,0))
+
     return (c + (1-c)*gy_mask), new_w
