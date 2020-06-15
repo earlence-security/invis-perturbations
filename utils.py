@@ -127,16 +127,17 @@ def split(inp,chan):
 
 
 
-#The shutter function is encoded into the convolution layer
-conv_size = 40
-lay = torch.nn.Conv1d(1,1,conv_size)
 
-#Manually setting the weights and bias so the  shutter acts as a box filter
-lay.weight.data = torch.full([1,1,conv_size,1], 1/conv_size, requires_grad=True, dtype=torch.float, device=device)
-lay.bias.data = torch.zeros(1, requires_grad=True, dtype=torch.float, device=device)
 
 #Compute g(y) to get X_adv
-def fttogy(w, batch, mask, c_limits, sig_height):
+def fttogy(w, batch, mask, c_limits, sig_height, conv_size):
+    #The shutter function is encoded into the convolution layer
+    lay = torch.nn.Conv1d(1,1,conv_size)
+
+    #Manually setting the weights and bias so the  shutter acts as a box filter
+    lay.weight.data = torch.full([1,1,conv_size,1], 1/conv_size, requires_grad=True, dtype=torch.float, device=device)
+    lay.bias.data = torch.zeros(1, requires_grad=True, dtype=torch.float, device=device)
+    
     sz = w.shape[1]
     
     #stack the signal to fit the input size
