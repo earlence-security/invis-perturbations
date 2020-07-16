@@ -26,6 +26,7 @@ import urllib.request
 import requests
 from matplotlib.pyplot import imshow
 import random
+import math
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -125,12 +126,13 @@ def split(inp,chan):
             inp2[i] = torch.zeros(size)
     return inp2
 
-
-
-
+def diff_round(x, depth):
+    pi = math.pi
+    if depth==0: return x
+    return diff_round(x-torch.sin(90*pi*x)/(90*pi), depth-1)
 
 #Compute g(y) to get X_adv
-def fttogy(w, batch, mask, c_limits, sig_height, conv_size):
+def fttogy(w, batch, mask, c_limits, sig_height, conv_size, precision_depth=2):
     #The shutter function is encoded into the convolution layer
     lay = torch.nn.Conv1d(1,1,conv_size)
 
@@ -154,11 +156,17 @@ def fttogy(w, batch, mask, c_limits, sig_height, conv_size):
     #Fit w into the range [0,1]. new_w is the same as ft
     new_w = .5 * (torch.tanh(ootn) + 1)
     
+    #precision limit
+    new_w = diff_round(new_w, precision_depth)
+    
     #Convolution of ft and the shutter
     #gy = lay(new_w.unsqueeze(0).view([3,1,228,batch])).view([batch,3,224,1])
     gy = lay(new_w.transpose(0,3).transpose(0,1)).transpose(0,1).transpose(0,3)
 
     #Mask the signal to only affect the object
-    gy_mask = torch.mul(gy,torch.transpose(mask,1,0))
+    if mask:
+        gy_mask = torch.mul(gy,torch.transpose(mask,1,0))
+    else:
+        gy_mask = gy
 
     return (c + (1-c)*gy_mask), new_w
