@@ -30,7 +30,7 @@ import math
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
+#device = torch.device('cpu')
 #Helper Functions
 
 #Function to view tensor
@@ -132,7 +132,7 @@ def diff_round(x, depth):
     return diff_round(x-torch.sin(90*pi*x)/(90*pi), depth-1)
 
 #Compute g(y) to get X_adv
-def fttogy(w, batch, mask, c_limits, sig_height, conv_size, precision_depth=2):
+def fttogy(w, batch, mask, c_limits, sig_height, conv_size, precision_depth=2, shifting=True, offset=None):
     #The shutter function is encoded into the convolution layer
     lay = torch.nn.Conv1d(1,1,conv_size)
 
@@ -140,18 +140,24 @@ def fttogy(w, batch, mask, c_limits, sig_height, conv_size, precision_depth=2):
     lay.weight.data = torch.full([1,1,conv_size,1], 1/conv_size, requires_grad=True, dtype=torch.float, device=device)
     lay.bias.data = torch.zeros(1, requires_grad=True, dtype=torch.float, device=device)
     
-    sz = w.shape[1]
-    
-    #stack the signal to fit the input size
-    oot = stack(w,sig_height)             
+    sz = w.shape[1]             
     
     # EOT sampling for ambient light and shift
     c = torch.rand([batch,1,1,1], device=device) * (c_limits[1] - c_limits[0]) + c_limits[0]
-    shift = torch.randint(0, sz, (batch,))
+    if shifting:
+        if offset != None:
+            offset_arr = [x%sz for x in range(offset,offset+batch)]
+            shift = torch.tensor(offset_arr, dtype=torch.int)
+        else:
+            shift = torch.randint(0, sz, (batch,))
+    else: shift = torch.zeros((batch,),dtype=torch.int)
     #shift = torch.from_numpy(np.array(range(0,batch,1)))
     
     #Shift the signal
-    ootn = shift_operation(oot.unsqueeze(0).repeat(batch,1,1,1).view(-1, sig_height, 1), shift).view(batch,3,sig_height,1)
+    oot = shift_operation(w.unsqueeze(0).repeat(batch,1,1,1).view(-1, sz, 1), shift).view(batch,3,sz,1)
+    
+    #stack the signal to fit the input size
+    ootn = torch.stack([stack(ooti,sig_height) for ooti in oot])
     
     #Fit w into the range [0,1]. new_w is the same as ft
     new_w = .5 * (torch.tanh(ootn) + 1)
@@ -164,7 +170,7 @@ def fttogy(w, batch, mask, c_limits, sig_height, conv_size, precision_depth=2):
     gy = lay(new_w.transpose(0,3).transpose(0,1)).transpose(0,1).transpose(0,3)
 
     #Mask the signal to only affect the object
-    if mask:
+    if mask is not None:
         gy_mask = torch.mul(gy,torch.transpose(mask,1,0))
     else:
         gy_mask = gy
