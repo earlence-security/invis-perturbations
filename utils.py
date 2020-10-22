@@ -29,7 +29,7 @@ import random
 import math
 
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+#device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 #device = torch.device('cpu')
 #Helper Functions
 
@@ -54,7 +54,7 @@ def readim(name,forward_normalize):
     return x
 
 #Function to replicate signal to match specified size
-def stack(w,size):
+def stack(w,size,device):
     dim = len(torch.flatten(w)) // 3
     if dim == size:
         return w
@@ -94,7 +94,7 @@ def stack(w,size):
     return nsum.transpose(0,2)
 
 #Function to shift signal by arbitrary offset
-def shift_operation(w,offsets):
+def shift_operation(w,offsets,device):
     dim = w.shape[1]
     ide = torch.eye(dim, device=device)
     ides = torch.zeros(w.shape[0], dim, dim, device=device)
@@ -132,7 +132,7 @@ def diff_round(x, depth):
     return diff_round(x-torch.sin(90*pi*x)/(90*pi), depth-1)
 
 #Compute g(y) to get X_adv
-def fttogy(w, batch, mask, c_limits, sig_height, conv_size, precision_depth=2, shifting=True, offset=None):
+def fttogy(w, batch, mask, c_limits, sig_height, conv_size, device, precision_depth=2, shifting=True, offset=None):
     #The shutter function is encoded into the convolution layer
     lay = torch.nn.Conv1d(1,1,conv_size)
 
@@ -147,17 +147,17 @@ def fttogy(w, batch, mask, c_limits, sig_height, conv_size, precision_depth=2, s
     if shifting:
         if offset != None:
             offset_arr = [x%sz for x in range(offset,offset+batch)]
-            shift = torch.tensor(offset_arr, dtype=torch.int)
+            shift = torch.tensor(offset_arr, dtype=torch.int,device=device)
         else:
-            shift = torch.randint(0, sz, (batch,))
-    else: shift = torch.zeros((batch,),dtype=torch.int)
+            shift = torch.randint(0, sz, (batch,),device=device)
+    else: shift = torch.zeros((batch,),dtype=torch.int,device=device)
     #shift = torch.from_numpy(np.array(range(0,batch,1)))
     
     #Shift the signal
-    oot = shift_operation(w.unsqueeze(0).repeat(batch,1,1,1).view(-1, sz, 1), shift).view(batch,3,sz,1)
+    oot = shift_operation(w.unsqueeze(0).repeat(batch,1,1,1).view(-1, sz, 1), shift, device).view(batch,3,sz,1)
     
     #stack the signal to fit the input size
-    ootn = torch.stack([stack(ooti,sig_height) for ooti in oot])
+    ootn = torch.stack([stack(ooti,sig_height,device) for ooti in oot])
     
     #Fit w into the range [0,1]. new_w is the same as ft
     new_w = .5 * (torch.tanh(ootn) + 1)
@@ -175,4 +175,4 @@ def fttogy(w, batch, mask, c_limits, sig_height, conv_size, precision_depth=2, s
     else:
         gy_mask = gy
 
-    return (c + (1-c)*gy_mask), new_w
+    return (c + (1-c)*gy_mask), new_w, shift
