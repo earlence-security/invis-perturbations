@@ -11,7 +11,7 @@ import json
 from utils import *
 
 
-def run_simulation(device, exposure, batch_size, image_cache_size, original_images, number_test_images, n_epochs, classes_to_skip, classidx, model_img_size=252, targidx=None, apply_transformations=True, ambient_light=None, color_noise=None, argument_list=None):
+def run_simulation(device, exposure, batch_size, image_cache_size, original_images, number_test_images, n_epochs, classes_to_skip, classidx, model_img_size=252, targidx=None, apply_transformations=True, ambient_light=None, color_noise=None, learning_rate=0.01, save_signal=True, comment="", alpha=1, beta=1, argument_list=None):
         
     inv_normalize = transforms.Normalize(
         mean=[-0.485/0.229, -0.456/0.224, -0.406/0.225],
@@ -51,7 +51,7 @@ def run_simulation(device, exposure, batch_size, image_cache_size, original_imag
     #Model parameters
     lr = 1e-1
     #optimizer = optim.SGD([w], lr=lr, momentum=0.9, nesterov=True)
-    optimizer = optim.Adam([w], lr=0.01)
+    optimizer = optim.Adam([w], lr=learning_rate)
     loss_fn = nn.CrossEntropyLoss()
     
     #Track the loss to target and original class
@@ -105,7 +105,7 @@ def run_simulation(device, exposure, batch_size, image_cache_size, original_imag
         #inp = torch.pow(0.0000001 + torch.pow(img_t,2.2) + gy*(torch.pow(img_f,2.2)-torch.pow(img_t,2.2)), 1/2.2)
 
         img_amb, img_bright, img_f = image_cache[random.randint(0,len(image_cache)-1)]
-        inp = torch.pow(0.0000001 + torch.pow(img_bright,2.2) + gy*(torch.pow(img_f,2.2)-torch.pow(img_amb,2.2)), 1/2.2)
+        inp = torch.pow(0.0000001 + torch.pow(alpha*img_bright,2.2) + gy*beta*(torch.pow(img_f,2.2)-torch.pow(img_amb,2.2)), 1/2.2)
 
         #Gaussian Noise
         #inp = inp + torch.randn(inp.size(),device=device)*0.005
@@ -154,7 +154,7 @@ def run_simulation(device, exposure, batch_size, image_cache_size, original_imag
             
     optimizer = None
 
-    if n_epochs!=1:
+    if n_epochs!=1 and save_signal:
         file_name = str(uuid.uuid4())
         torch.save(new_w,'input_dump/'+file_name+'.pt')
         with open('input_dump/'+file_name+'.json','w') as fp:
@@ -169,7 +169,7 @@ def run_simulation(device, exposure, batch_size, image_cache_size, original_imag
     for i in range(number_test_images):
 
         img_t2, img_b2, img_f2 = get_image_trip(original_images[0], original_images[1], device, apply_transformations, ambient_light)
-        inp2 = torch.pow(0.0000001 + torch.pow(img_b2,2.2) + gy*(torch.pow(img_f2,2.2)-torch.pow(img_t2,2.2)), 1/2.2)
+        inp2 = torch.pow(0.0000001 + torch.pow(alpha*img_b2,2.2) + gy*beta*(torch.pow(img_f2,2.2)-torch.pow(img_t2,2.2)), 1/2.2)
 
         inp2 = torch.cat([forward_normalize(upsample2d(i,224)).unsqueeze(0) for i in inp2])
         inp2 = inp2.to(device)
