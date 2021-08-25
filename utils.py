@@ -6,11 +6,9 @@ from torch import optim
 import json
 from PIL import Image
 import io
-import cv2
 import torchvision.transforms.functional as TF
 from torchvision.utils import save_image
 from torchvision.transforms import ToPILImage
-from matplotlib import pyplot as plt
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,34 +22,8 @@ import copy
 import pickle
 import urllib.request
 import requests
-from matplotlib.pyplot import imshow
 import random
 import math
-
-
-#device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#device = torch.device('cpu')
-#Helper Functions
-
-#Function to view tensor
-def imshow_tensor(img, inv_normalize):
-    img = inv_normalize(img)     # unnormalize
-    npimg = img.numpy()
-    plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.show()
-    
-#Function to save image
-def saveim(img, name,inv_normalize):
-    img = inv_normalize(img.cpu())
-    save_image(img, name)
-
-#Function to read in image
-def readim(name,forward_normalize):
-    image = Image.open(name)
-    x = TF.to_tensor(image)
-    x = forward_normalize(x)
-    x.unsqueeze_(0)
-    return x
 
 #Function to replicate signal to match specified size
 def stack(w,size,device):
@@ -104,35 +76,8 @@ def shift_operation(w,offsets,device):
         ides[3*i+2] = torch.cat([ide[-offset:], ide[:-offset]])
     return torch.bmm(ides,w)
 
-#Function to deal with gamma correction?
-def gamma_correction(img, factor):
-    return ((img+0.5)**factor)-0.5
-
-#Function to scale the signal
-def scale_operation(w, scale):
-    dim = len(torch.flatten(w))//3
-    n_dim = int(dim/scale)
-    w = w.unsqueeze(0)
-    t = nn.Upsample(size=(dim,1), mode='bilinear')
-    n_w = t(w[:,:,:n_dim])
-    return n_w[0]
-
-#Function to get one colour channel of a signal
-def split(inp,chan):
-    size = inp[0].shape
-    inp2 = copy.deepcopy(inp.detach())
-    for i in range(len(inp)):
-        if i != chan:
-            inp2[i] = torch.zeros(size)
-    return inp2
-
-def diff_round(x, depth):
-    pi = math.pi
-    if depth==0: return x
-    return diff_round(x-torch.sin(90*pi*x)/(90*pi), depth-1)
-
 #Compute g(y) to get X_adv
-def fttogy(w, batch, mask, c_limits, sig_height, conv_size, device, precision_depth=2, shifting=True, offset=None):
+def fttogy(w, batch, sig_height, conv_size, device, precision_depth=2, shifting=True, offset=None, fit_in_range=False):
     #The shutter function is encoded into the convolution layer
     lay = torch.nn.Conv1d(1,1,conv_size)
 
@@ -143,7 +88,6 @@ def fttogy(w, batch, mask, c_limits, sig_height, conv_size, device, precision_de
     sz = w.shape[1]             
     
     # EOT sampling for ambient light and shift
-    c = torch.rand([batch,1,1,1], device=device) * (c_limits[1] - c_limits[0]) + c_limits[0]
     if shifting:
         if offset != None:
             offset_arr = [x%sz for x in range(offset,offset+batch)]
@@ -160,19 +104,13 @@ def fttogy(w, batch, mask, c_limits, sig_height, conv_size, device, precision_de
     ootn = torch.stack([stack(ooti,sig_height,device) for ooti in oot])
     
     #Fit w into the range [0,1]. new_w is the same as ft
-    new_w = .5 * (torch.tanh(ootn) + 1)
-    
-    #precision limit
-    new_w = diff_round(new_w, precision_depth)
+    if fit_in_range:
+        new_w = .5 * (torch.tanh(ootn) + 1)
+    else:
+        new_w = ootn # .5 * (torch.tanh(ootn) + 1)
     
     #Convolution of ft and the shutter
     #gy = lay(new_w.unsqueeze(0).view([3,1,228,batch])).view([batch,3,224,1])
     gy = lay(new_w.transpose(0,3).transpose(0,1)).transpose(0,1).transpose(0,3)
 
-    #Mask the signal to only affect the object
-    if mask is not None:
-        gy_mask = torch.mul(gy,torch.transpose(mask,1,0))
-    else:
-        gy_mask = gy
-
-    return (c + (1-c)*gy_mask), new_w, shift
+    return gy, new_w
