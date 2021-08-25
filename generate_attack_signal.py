@@ -226,21 +226,8 @@ def main(args):
     freq_count = sorted([(i,x) for i,x in enumerate(freq_count)], key=lambda x:x[1], reverse=True)
     print(f"TOP CLASSES {freq_count[:10]}")
     
-    
-    
     ### save the signal
-    
-    
-
-
-
-
-
-
-
-
-
-
+    torch.save(n_w,args.outpath)
 
 if __name__ == '__main__':
     parser = ArgumentParser()
@@ -259,6 +246,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--lr', type=float, default=0.01)
     parser.add_argument('--opt_stat', type=str, default='pgd')
-    parser.add_argument('--update_freq', type=int, default=5)
+    parser.add_argument('--update_freq', type=int, default=10)
+    parser.add_argument('--outpath', type=str, default="./generated_attacks/attack.pt")
 
     main(parser.parse_args())
